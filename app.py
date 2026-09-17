@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 import random
 import os
+import json
+from datetime import datetime
 
 # 1. Your exact asset loot table database
 LOOT_TABLE = [
@@ -247,24 +249,73 @@ LOOT_TABLE = [
   }
 ]
 
-# 2. Config the bot client
+DATA_FILE = "user_data.json"
+MAX_SLOTS = 20
+
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+def load_data():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_data(data):
+    try:
+        with open(DATA_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"Error saving data: {e}")
+
+USER_DATA = load_data()
+
+def get_user_profile(user_id):
+    uid_str = str(user_id)
+    if uid_str not in USER_DATA:
+        USER_DATA[uid_str] = {"gold": 0, "inventory": []}
+    return USER_DATA[uid_str]
+
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user.name} and ready!")
+    print(f"Logged in as {bot.user.name} and ready for unhinged chaos!")
 
+# Cooldown error handler to catch spamming attempts gracefully
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandOnCooldown):
+        seconds = round(error.retry_after, 1)
+        unhinged_cooldown_messages = [
+            f"🛑 Chill out! Your hands are shaking. Wait `{seconds}s` before chasing that dopamine rush again.",
+            f"❌ Economy protection triggered! You are looting too fast. Try again in `{seconds}s`.",
+            f"⏳ Whoa there speedrunner, calm down. Your cooldown ends in `{seconds}s`."
+        ]
+        await ctx.send(random.choice(unhinged_cooldown_messages))
+    else:
+        raise error
+
+# 2-minute cooldown system to completely stop spam exploits
 @bot.command()
+@commands.cooldown(1, 7200, commands.BucketType.user)
 async def loot(ctx):
-    # Grabs probability weights from your table array data
-    weights = [item["probability_percent"] for item in LOOT_TABLE]
+    user_id = ctx.author.id
+    profile = get_user_profile(user_id)
     
-    # Pick a random item using the mathematical weights
+    if len(profile["inventory"]) >= MAX_SLOTS:
+        ctx.command.reset_cooldown(ctx) # Refund cooldown if slots are full
+        await ctx.send(f"❌ **Your hoard is overflowing ({len(profile['inventory'])}/{MAX_SLOTS})!** Use `!sell <item name>` to clean space.")
+        return
+
+    weights = [item["probability_percent"] for item in LOOT_TABLE]
     chosen_item = random.choices(LOOT_TABLE, weights=weights, k=1)[0]
     
-    # Rarity Color Palette setup
+    profile["inventory"].append(chosen_item["id"])
+    save_data(USER_DATA)
+
     rarity_colors = {
         "common": 0x95a5a6,      
         "uncommon": 0x2ecc71,    
@@ -274,24 +325,19 @@ async def loot(ctx):
     }
     color = rarity_colors.get(chosen_item["rarity"].lower(), 0xffffff)
 
-    # Set up the local image paths using the icons folder you created
-    image_file_path = chosen_item['sprite_path']
+    image_file_path = f"icons/{chosen_item['sprite_path']}"
+    file = None
+    thumbnail_url = None
     
-    # Check if image file exists to prevent crashing if a sprite is missing
     if os.path.exists(image_file_path):
         file = discord.File(image_file_path, filename=chosen_item['sprite_path'])
         thumbnail_url = f"attachment://{chosen_item['sprite_path']}"
-    else:
-        file = None
-        thumbnail_url = None
 
-    # 3. Formats the aesthetic visual box layout
     embed = discord.Embed(
         title=f"🎁 {chosen_item['name'].upper()}",
         description=f"*{chosen_item['description']}*",
         color=color
     )
-    
     embed.add_field(name="Rarity", value=f"`{chosen_item['rarity'].upper()}`", inline=True)
     embed.add_field(name="Type", value=chosen_item["type"].title(), inline=True)
     embed.add_field(name="Value", value=f"💰 {chosen_item['gold_value']} Gold", inline=True)
@@ -299,14 +345,118 @@ async def loot(ctx):
     if thumbnail_url:
         embed.set_thumbnail(url=thumbnail_url)
         
-    embed.set_footer(text=f"Rolled by {ctx.author.name}")
+    slots_used = len(profile["inventory"])
+    embed.set_footer(text=f"Rolled by {ctx.author.name} | Bag: {slots_used}/{MAX_SLOTS}")
 
-    # Sends file and embed cleanly to the channel
     if file:
         await ctx.send(file=file, embed=embed)
     else:
         await ctx.send(embed=embed)
 
-# Paste your token directly here inside the quotes. 
-# Because your space is Private, no one else can see this!
+@bot.command()
+async def inv(ctx):
+    user_id = ctx.author.id
+    profile = get_user_profile(user_id)
+    inventory = profile["inventory"]
+    
+    slots_used = len(inventory)
+    if slots_used == 0:
+        embed = discord.Embed(title=f"🎒 {ctx.author.name}'s Bag", description="Completely empty. Run `!loot` to find some junk.", color=0x95a5a6)
+        embed.add_field(name="Wallet Balance", value=f"💰 {profile['gold']} Gold")
+        await ctx.send(embed=embed)
+        return
+
+    item_counts = {}
+    for item_id in inventory:
+        item_counts[item_id] = item_counts.get(item_id, 0) + 1
+        
+    inv_desc = ""
+    for item_id, count in item_counts.items():
+        item_meta = next((i for i in LOOT_TABLE if i["id"] == item_id), None)
+        if item_meta:
+            inv_desc += f"• **{item_meta['name'].upper()}** x{count} (`{item_meta['rarity'].upper()}` | Value: {item_meta['gold_value']}g each)
+"
+
+    embed = discord.Embed(
+        title=f"🎒 {ctx.author.name}'s Storage",
+        description=inv_desc,
+        color=0x3498db
+    )
+    embed.add_field(name="Net Wealth", value=f"💰 {profile['gold']} Gold", inline=True)
+    embed.add_field(name="Storage Slots", value=f"📦 `{slots_used}/{MAX_SLOTS}` Slots", inline=True)
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def sell(ctx, *, item_name: str = None):
+    if not item_name:
+        await ctx.send("⚠️ Usage: `!sell <item name>` (e.g. `!sell soda`)")
+        return
+
+    user_id = ctx.author.id
+    profile = get_user_profile(user_id)
+    inventory = profile["inventory"]
+
+    target_item = next((i for i in LOOT_TABLE if i["name"].lower() == item_name.lower()), None)
+    
+    if not target_item or target_item["id"] not in inventory:
+        await ctx.send(f"❌ You don't have any '{item_name}' in your bag.")
+        return
+
+    inventory.remove(target_item["id"])
+    profile["gold"] += target_item["gold_value"]
+    save_data(USER_DATA)
+
+    await ctx.send(f"💰 Sold 1x **{target_item['name'].upper()}** for **{target_item['gold_value']} Gold**. Bag space: `{len(inventory)}/{MAX_SLOTS}`")
+
+@bot.command()
+async def leaderboard(ctx):
+    if not USER_DATA:
+        await ctx.send("The leaderboard is currently empty.")
+        return
+
+    # Sort users by gold value descending
+    sorted_users = sorted(USER_DATA.items(), key=lambda x: x[1].get("gold", 0), reverse=True)[:10]
+    
+    leaderboard_text = ""
+    for index, (uid, data) in enumerate(sorted_users, 1):
+        try:
+            user = await bot.fetch_user(int(uid))
+            name = user.name
+        except Exception:
+            name = f"Unknown User ({uid})"
+        leaderboard_text += f"{index}. **{name}** - 💰 {data.get('gold', 0)} Gold
+"
+
+    embed = discord.Embed(
+        title="🏆 Global Wealth Leaderboard",
+        description=leaderboard_text,
+        color=0xf1c40f
+    )
+    await ctx.send(embed=embed)
+
 bot.run("MTU1MDEwOTYwMTk0NzQ1NTY0OA.G2t4jD.cJD9vg5qJLyT3JFKg7eL7w2dEW94wnUSt6iYLY")
+
+@loot.error
+async def loot_error(ctx, error):
+    """Catches the 2-hour cooldown trigger and handles it gracefully."""
+    if isinstance(error, commands.CommandOnCooldown):
+        # Convert the remaining cooldown seconds into hours and minutes
+        minutes, seconds = divmod(int(error.retry_after), 60)
+        hours, minutes = divmod(minutes, 60)
+        
+        # Build out a funny, chaotic rejection message matching your bot's theme
+        if hours > 0:
+            time_left = f"{hours}h {minutes}m"
+        else:
+            time_left = f"{minutes}m {seconds}s"
+            
+        unhinged_replies = [
+            f"❌ **Back off!** Your hands are trembling from brainrot. Wait another `{time_left}`.",
+            f"🛑 **DENIED.** Hein's ballz aren't ready to drop yet. Try again in `{time_left}`.",
+            f"⚠️ **Woah there, speedrunner.** Go touch some grass or look for Larry in your closet. `{time_left}` remaining."
+        ]
+        
+        await ctx.send(random.choice(unhinged_replies))
+    else:
+        # If it's a completely different error, raise it normally so you can debug it
+        raise error
