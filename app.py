@@ -367,8 +367,7 @@ async def inv(ctx, member: discord.Member = None):
             iname = item_meta['name'].upper()
             irar = item_meta['rarity'].upper()
             ival = item_meta['gold_value']
-            inv_desc += f"**{iname}** x{count} (`{irar}` | Value: {ival}g each)\n"
-
+            inv_desc += f"• **{iname}** x{count} (`{irar}` | Value: {ival}g each)"
     embed = discord.Embed(title=f"🎒 {target.name}'s Unhinged Hoard", description=inv_desc, color=0x3498db)
     embed.add_field(name="Net Wealth", value=f"💰 {profile['gold']} Gold", inline=True)
     cap_str = "Infinite" if target.name.lower() == "ralsei_2" else f"{slots_used}/{MAX_SLOTS}"
