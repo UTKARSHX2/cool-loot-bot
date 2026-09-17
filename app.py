@@ -367,7 +367,9 @@ async def inv(ctx, member: discord.Member = None):
             iname = item_meta['name'].upper()
             irar = item_meta['rarity'].upper()
             ival = item_meta['gold_value']
-            inv_desc += f"• **{iname}** x{count} (`{irar}` | Value: {ival}g each)"
+            inv_desc += f"• **{iname}** x{count} (`{irar}` | Value: {ival}g each)
+"
+            
     embed = discord.Embed(title=f"🎒 {target.name}'s Unhinged Hoard", description=inv_desc, color=0x3498db)
     embed.add_field(name="Net Wealth", value=f"💰 {profile['gold']} Gold", inline=True)
     cap_str = "Infinite" if target.name.lower() == "ralsei_2" else f"{slots_used}/{MAX_SLOTS}"
@@ -396,13 +398,42 @@ async def sell(ctx, *, item_name: str = None):
     await ctx.send(f"💰 Sold 1x **{target_item['name'].upper()}** for **{target_item['gold_value']} Gold**.")
 
 @bot.command()
+async def buy(ctx, *, item_name: str = None):
+    if not item_name:
+        await ctx.send("⚠️ Specify what you want to buy! Example: `!buy soda`")
+        return
+
+    user_id = str(ctx.author.id)
+    profile = get_user_profile(user_id)
+    inventory = profile["inventory"]
+
+    target_item = next((i for i in LOOT_TABLE if i["name"].lower() == item_name.lower()), None)
+    if not target_item:
+        await ctx.send(f"❌ '{item_name}' doesn't exist in the item database.")
+        return
+
+    if len(inventory) >= MAX_SLOTS and not is_admin(ctx):
+        await ctx.send(f"❌ **Your hoard is overflowing ({len(inventory)}/{MAX_SLOTS})!** Cannot buy more items.")
+        return
+
+    if profile["gold"] < target_item["gold_value"]:
+        await ctx.send(f"❌ You don't have enough gold! **{target_item['name'].upper()}** costs **{target_item['gold_value']} Gold**, but you only have **{profile['gold']} Gold**.")
+        return
+
+    profile["gold"] -= target_item["gold_value"]
+    inventory.append(target_item["id"])
+    save_data(USER_DATA)
+
+    await ctx.send(f"🛍️ Bought 1x **{target_item['name'].upper()}** for **{target_item['gold_value']} Gold**.")
+
+@bot.command()
 async def give(ctx, member: discord.Member, *, item_name: str):
     target_item = next((i for i in LOOT_TABLE if i["name"].lower() == item_name.lower()), None)
     if not target_item:
         await ctx.send(f"❌ '{item_name}' doesn't exist in the item database.")
         return
 
-    receiver_profile = get_user_profile(member.id)
+    receiver_profile = get_user_profile(str(member.id))
     if len(receiver_profile["inventory"]) >= MAX_SLOTS and member.name.lower() != "ralsei_2":
         await ctx.send(f"❌ {member.mention}'s inventory is full!")
         return
@@ -412,7 +443,7 @@ async def give(ctx, member: discord.Member, *, item_name: str):
         save_data(USER_DATA)
         await ctx.send(f"⚡ **ADMIN POWER:** {ctx.author.mention} spawned and gave 1x **{target_item['name'].upper()}** to {member.mention}!")
     else:
-        giver_profile = get_user_profile(ctx.author.id)
+        giver_profile = get_user_profile(str(ctx.author.id))
         if target_item["id"] not in giver_profile["inventory"]:
             await ctx.send(f"❌ You don't own a '{item_name}' to trade.")
             return
@@ -458,4 +489,5 @@ async def loot_error(ctx, error):
     else:
         raise error
 
+# REMINDER: Regenerate this token in your discord portal if it leaks publicly!
 bot.run("MTU1MDEwOTYwMTk0NzQ1NTY0OA.G2t4jD.cJD9vg5qJLyT3JFKg7eL7w2dEW94wnUSt6iYLY")
