@@ -367,7 +367,8 @@ async def inv(ctx, member: discord.Member = None):
             iname = item_meta['name'].upper()
             irar = item_meta['rarity'].upper()
             ival = item_meta['gold_value']
-            inv_desc += f"• **{iname}** x{count} (`{irar}` | Value: {ival}g each)"
+            inv_desc += f"• **{iname}** x{count} (`{irar}` | Value: {ival}g each)\n"
+            
     embed = discord.Embed(title=f"🎒 {target.name}'s Unhinged Hoard", description=inv_desc, color=0x3498db)
     embed.add_field(name="Net Wealth", value=f"💰 {profile['gold']} Gold", inline=True)
     cap_str = "Infinite" if target.name.lower() == "ralsei_2" else f"{slots_used}/{MAX_SLOTS}"
@@ -465,8 +466,7 @@ async def leaderboard(ctx):
             uname = user.name
         except:
             uname = f"User_{uid}"
-        desc += f"{idx}. **{uname}** — 💰 {data.get('gold', 0)} Gold
-"
+        desc += f"{idx}. **{uname}** — 💰 {data.get('gold', 0)} Gold\n"
 
     embed = discord.Embed(title="🏆 Global Wealth Leaderboard", description=desc, color=0xf1c40f)
     await ctx.send(embed=embed)
@@ -487,5 +487,4 @@ async def loot_error(ctx, error):
     else:
         raise error
 
-# REMINDER: Regenerate this token in your discord portal if it leaks publicly!
 bot.run("MTU1MDEwOTYwMTk0NzQ1NTY0OA.G2t4jD.cJD9vg5qJLyT3JFKg7eL7w2dEW94wnUSt6iYLY")
