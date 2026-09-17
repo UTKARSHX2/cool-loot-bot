@@ -275,7 +275,7 @@ async def loot(ctx):
     color = rarity_colors.get(chosen_item["rarity"].lower(), 0xffffff)
 
     # Set up the local image paths using the icons folder you created
-    image_file_path = f"icons/{chosen_item['sprite_path']}"
+    image_file_path = chosen_item['sprite_path']
     
     # Check if image file exists to prevent crashing if a sprite is missing
     if os.path.exists(image_file_path):
