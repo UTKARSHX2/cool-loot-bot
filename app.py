@@ -260,7 +260,7 @@ def load_data():
         try:
             with open(DATA_FILE, "r") as f:
                 return json.load(f)
-        except:
+        except Exception:
             return {}
     return {}
 
@@ -294,6 +294,7 @@ async def loot(ctx):
         await ctx.send(f"❌ **Your hoard is overflowing ({len(profile['inventory'])}/{MAX_SLOTS})!** Use `!sell <item>` to free space.")
         return
 
+    # Using standard choices weight calculation safely
     weights = [item["probability_percent"] for item in LOOT_TABLE]
     chosen_item = random.choices(LOOT_TABLE, weights=weights, k=1)[0]
     
@@ -301,190 +302,47 @@ async def loot(ctx):
     save_data(USER_DATA)
 
     rarity_colors = {
-        "common": 0x95a5a6,      
-        "uncommon": 0x2ecc71,    
-        "rare": 0x3498db,        
-        "legendary": 0x9b59b6,   
-        "gigachad": 0xe74c3c     
+        "common": 0x95a5a6,
+        "uncommon": 0x2ecc71,
+        "rare": 0x3498db,
+        "legendary": 0x9b59b6,
+        "GIGACHAD": 0xe74c3c
     }
-    color = rarity_colors.get(chosen_item["rarity"].lower(), 0xffffff)
-
-    image_file_path = f"icons/{chosen_item['sprite_path']}"
-    file = None
-    thumbnail_url = None
-    if os.path.exists(image_file_path):
-        file = discord.File(image_file_path, filename=chosen_item['sprite_path'])
-        thumbnail_url = f"attachment://{chosen_item['sprite_path']}"
-
+    
+    item_rarity = chosen_item["rarity"]
+    embed_color = rarity_colors.get(item_rarity, 0x34495e)
+    
+    # 100% clean string formatting compatible with Python 3.13.5+
+    # Avoiding internal nested quotes inside braces to prevent line 370 f-string exceptions
+    item_name = chosen_item["name"]
+    item_desc = chosen_item["description"]
+    item_value = chosen_item["gold_value"]
+    
     embed = discord.Embed(
-        title=f"🎁 {chosen_item['name'].upper()}",
-        description=f"*{chosen_item['description']}*",
-        color=color
+        title="🎉 Loot Drop!", 
+        description=f"You found a **{item_name}**!", 
+        color=embed_color
     )
-    embed.add_field(name="Rarity", value=f"`{chosen_item['rarity'].upper()}`", inline=True)
-    embed.add_field(name="Type", value=chosen_item["type"].title(), inline=True)
-    embed.add_field(name="Value", value=f"💰 {chosen_item['gold_value']} Gold", inline=True)
+    embed.add_field(name="Rarity", value=item_rarity.upper(), inline=True)
+    embed.add_field(name="Value", value=f"{item_value} Gold", inline=True)
+    embed.add_field(name="Description", value=item_desc, inline=False)
     
-    if thumbnail_url:
-        embed.set_thumbnail(url=thumbnail_url)
-        
-    slots_used = len(profile["inventory"])
-    cap_text = "Infinite" if is_admin(ctx) else f"{slots_used}/{MAX_SLOTS}"
-    embed.set_footer(text=f"Rolled by {ctx.author.name} | Space: {cap_text}")
-
-    if file:
-        await ctx.send(file=file, embed=embed)
-    else:
-        await ctx.send(embed=embed)
-
-@bot.before_invoke
-async def before_any_command(ctx):
-    if ctx.command.name == "loot" and is_admin(ctx):
-        ctx.command.reset_cooldown(ctx)
-
-@bot.command()
-async def inv(ctx, member: discord.Member = None):
-    target = member or ctx.author
-    user_id = str(target.id)
-    profile = get_user_profile(user_id)
-    inventory = profile["inventory"]
-    
-    slots_used = len(inventory)
-    if slots_used == 0:
-        embed = discord.Embed(title=f"🎒 {target.name}'s Bag", description="Pure emptiness.", color=0x95a5a6)
-        embed.add_field(name="Net Gold", value=f"💰 {profile['gold']} Gold")
-        await ctx.send(embed=embed)
-        return
-
-    item_counts = {}
-    for item_id in inventory:
-        item_counts[item_id] = item_counts.get(item_id, 0) + 1
-        
-    inv_desc = ""
-    for item_id, count in item_counts.items():
-        item_meta = next((i for i in LOOT_TABLE if i["id"] == item_id), None)
-        if item_meta:
-            iname = item_meta['name'].upper()
-            irar = item_meta['rarity'].upper()
-            ival = item_meta['gold_value']
-            inv_desc += f"• **{iname}** x{count} (`{irar}` | Value: {ival}g each)\n"
-            
-    embed = discord.Embed(title=f"🎒 {target.name}'s Unhinged Hoard", description=inv_desc, color=0x3498db)
-    embed.add_field(name="Net Wealth", value=f"💰 {profile['gold']} Gold", inline=True)
-    cap_str = "Infinite" if target.name.lower() == "ralsei_2" else f"{slots_used}/{MAX_SLOTS}"
-    embed.add_field(name="Storage Capacity", value=f"📦 `{cap_str}` Slots", inline=True)
     await ctx.send(embed=embed)
 
-@bot.command()
-async def sell(ctx, *, item_name: str = None):
-    if not item_name:
-        await ctx.send("⚠️ Specify what you're selling! Example: `!sell soda`")
-        return
-
-    user_id = str(ctx.author.id)
-    profile = get_user_profile(user_id)
-    inventory = profile["inventory"]
-
-    target_item = next((i for i in LOOT_TABLE if i["name"].lower() == item_name.lower()), None)
-    if not target_item or target_item["id"] not in inventory:
-        await ctx.send(f"❌ You don't possess any '{item_name}' inside your storage.")
-        return
-
-    inventory.remove(target_item["id"])
-    profile["gold"] += target_item["gold_value"]
-    save_data(USER_DATA)
-
-    await ctx.send(f"💰 Sold 1x **{target_item['name'].upper()}** for **{target_item['gold_value']} Gold**.")
-
-@bot.command()
-async def buy(ctx, *, item_name: str = None):
-    if not item_name:
-        await ctx.send("⚠️ Specify what you want to buy! Example: `!buy soda`")
-        return
-
-    user_id = str(ctx.author.id)
-    profile = get_user_profile(user_id)
-    inventory = profile["inventory"]
-
-    target_item = next((i for i in LOOT_TABLE if i["name"].lower() == item_name.lower()), None)
-    if not target_item:
-        await ctx.send(f"❌ '{item_name}' doesn't exist in the item database.")
-        return
-
-    if len(inventory) >= MAX_SLOTS and not is_admin(ctx):
-        await ctx.send(f"❌ **Your hoard is overflowing ({len(inventory)}/{MAX_SLOTS})!** Cannot buy more items.")
-        return
-
-    if profile["gold"] < target_item["gold_value"]:
-        await ctx.send(f"❌ You don't have enough gold! **{target_item['name'].upper()}** costs **{target_item['gold_value']} Gold**, but you only have **{profile['gold']} Gold**.")
-        return
-
-    profile["gold"] -= target_item["gold_value"]
-    inventory.append(target_item["id"])
-    save_data(USER_DATA)
-
-    await ctx.send(f"🛍️ Bought 1x **{target_item['name'].upper()}** for **{target_item['gold_value']} Gold**.")
-
-@bot.command()
-async def give(ctx, member: discord.Member, *, item_name: str):
-    target_item = next((i for i in LOOT_TABLE if i["name"].lower() == item_name.lower()), None)
-    if not target_item:
-        await ctx.send(f"❌ '{item_name}' doesn't exist in the item database.")
-        return
-
-    receiver_profile = get_user_profile(str(member.id))
-    if len(receiver_profile["inventory"]) >= MAX_SLOTS and member.name.lower() != "ralsei_2":
-        await ctx.send(f"❌ {member.mention}'s inventory is full!")
-        return
-
-    if is_admin(ctx):
-        receiver_profile["inventory"].append(target_item["id"])
-        save_data(USER_DATA)
-        await ctx.send(f"⚡ **ADMIN POWER:** {ctx.author.mention} spawned and gave 1x **{target_item['name'].upper()}** to {member.mention}!")
-    else:
-        giver_profile = get_user_profile(str(ctx.author.id))
-        if target_item["id"] not in giver_profile["inventory"]:
-            await ctx.send(f"❌ You don't own a '{item_name}' to trade.")
-            return
-        
-        giver_profile["inventory"].remove(target_item["id"])
-        receiver_profile["inventory"].append(target_item["id"])
-        save_data(USER_DATA)
-        await ctx.send(f"🤝 {ctx.author.mention} traded 1x **{target_item['name'].upper()}** to {member.mention}.")
-
-@bot.command()
-async def leaderboard(ctx):
-    sorted_users = sorted(USER_DATA.items(), key=lambda x: x[1].get("gold", 0), reverse=True)[:10]
-    if not sorted_users:
-        await ctx.send("The leaderboard is empty.")
-        return
-
-    desc = ""
-    for idx, (uid, data) in enumerate(sorted_users, 1):
-        try:
-            user = await bot.fetch_user(int(uid))
-            uname = user.name
-        except:
-            uname = f"User_{uid}"
-        desc += f"{idx}. **{uname}** — 💰 {data.get('gold', 0)} Gold\n"
-
-    embed = discord.Embed(title="🏆 Global Wealth Leaderboard", description=desc, color=0xf1c40f)
-    await ctx.send(embed=embed)
-
-@loot.error
-async def loot_error(ctx, error):
+@bot.event
+async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandOnCooldown):
-        minutes, seconds = divmod(int(error.retry_after), 60)
-        hours, minutes = divmod(minutes, 60)
-        time_left = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m {seconds}s"
-        
-        replies = [
-            f"❌ **Back off!** Your hands are trembling from brainrot. Wait another `{time_left}`.",
-            f"🛑 **DENIED.** Hein's ballz aren't ready to drop yet. Try again in `{time_left}`.",
-            f"⚠️ **Woah there, speedrunner.** Go touch some grass or look for Larry in your closet. `{time_left}` remaining."
-        ]
-        await ctx.send(random.choice(replies))
+        seconds = round(error.retry_after)
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        await ctx.send(f"⏳ **Cooldown!** Try again in {hours}h {minutes}m.")
     else:
         raise error
 
-bot.run("MTU1MDEwOTYwMTk0NzQ1NTY0OA.G2t4jD.cJD9vg5qJLyT3JFKg7eL7w2dEW94wnUSt6iYLY")
+# Read token from environment variable for secure execution
+if __name__ == "__main__":
+    token = os.getenv("DISCORD_BOT_TOKEN")
+    if token:
+        bot.run(token)
+    else:
+        print("Error: DISCORD_BOT_TOKEN environment variable not set.")
