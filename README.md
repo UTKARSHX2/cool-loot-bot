@@ -1,0 +1,2 @@
+# cool-loot-bot
+jsjsj
