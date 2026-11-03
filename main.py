@@ -3,6 +3,8 @@ from discord.ext import commands
 import random
 import os
 import json
+from dotenv import load_dotenv
+load_dotenv()
 
 # ==========================================
 # 🛠️ FIXED: ANDROID ROOT DIRECTORY PATHS
@@ -514,5 +516,8 @@ async def loot_error(ctx, error):
         await ctx.send(random.choice(replies))
     else:
         raise error
-
-bot.run("MTU1MDEwOTYwMTk0NzQ1NTY0OA.G2t4jD.cJD9vg5qJLyT3JFKg7eL7w2dEW94wnUSt6iYLY")
+TOKEN = os.environ.get("DISCORD_TOKEN")
+if TOKEN:
+  bot.run(TOKEN)
+else:
+  print("error")
